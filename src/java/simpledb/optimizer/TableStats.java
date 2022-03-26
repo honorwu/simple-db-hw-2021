@@ -6,6 +6,7 @@ import simpledb.execution.Predicate;
 import simpledb.execution.SeqScan;
 import simpledb.storage.*;
 import simpledb.transaction.Transaction;
+import simpledb.transaction.TransactionId;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -68,6 +69,12 @@ public class TableStats {
      */
     static final int NUM_HIST_BINS = 100;
 
+    private int ioCostPerPage;
+    private int tableId;
+    private int total;
+    private int min[];
+    private int max[];
+
     /**
      * Create a new TableStats object, that keeps track of statistics on each
      * column of a table
@@ -87,6 +94,45 @@ public class TableStats {
         // necessarily have to (for example) do everything
         // in a single scan of the table.
         // some code goes here
+        this.tableId = tableid;
+        this.ioCostPerPage = ioCostPerPage;
+
+        TransactionId tid = new TransactionId();
+        SeqScan seq = new SeqScan(tid, tableId);
+
+        try {
+            seq.open();
+            TupleDesc td = seq.getTupleDesc();
+
+            min = new int [td.numFields()];
+            max = new int [td.numFields()];
+
+            for (int i=0; i<td.numFields(); i++) {
+                min[i] = Integer.MAX_VALUE;
+                max[i] = Integer.MIN_VALUE;
+            }
+
+            while (seq.hasNext()) {
+                Tuple t = seq.next();
+
+                for (int i=0; i<td.numFields(); i++) {
+                    IntField f = (IntField) t.getField(i);
+                    if (f.getValue() < min[i]) {
+                        min[i] = f.getValue();
+                    }
+
+                    if (f.getValue() > max[i]) {
+                        max[i] = f.getValue();
+                    }
+                }
+                total++;
+            }
+            seq.close();
+
+            Database.getBufferPool().transactionComplete(tid);
+        } catch (Exception e) {
+
+        }
     }
 
     /**
@@ -103,7 +149,8 @@ public class TableStats {
      */
     public double estimateScanCost() {
         // some code goes here
-        return 0;
+        HeapFile file = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        return file.numPages() * ioCostPerPage;
     }
 
     /**
@@ -117,7 +164,7 @@ public class TableStats {
      */
     public int estimateTableCardinality(double selectivityFactor) {
         // some code goes here
-        return 0;
+        return (int) (totalTuples() * selectivityFactor);
     }
 
     /**
@@ -150,7 +197,28 @@ public class TableStats {
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
         // some code goes here
-        return 1.0;
+        IntHistogram intHistogram = new IntHistogram(NUM_HIST_BINS, min[field], max[field]);
+
+        TransactionId tid = new TransactionId();
+        SeqScan seq = new SeqScan(tid, tableId);
+
+        try {
+            seq.open();
+
+            while (seq.hasNext()) {
+                Tuple t = seq.next();
+                IntField f = (IntField) t.getField(field);
+                intHistogram.addValue(f.getValue());
+            }
+            seq.close();
+        } catch (Exception e) {
+
+        }
+
+        Database.getBufferPool().transactionComplete(tid);
+
+        IntField f = (IntField) constant;
+        return intHistogram.estimateSelectivity(op, f.getValue());
     }
 
     /**
@@ -158,7 +226,7 @@ public class TableStats {
      * */
     public int totalTuples() {
         // some code goes here
-        return 0;
+        return total;
     }
 
 }

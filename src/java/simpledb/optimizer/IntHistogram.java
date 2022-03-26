@@ -6,6 +6,13 @@ import simpledb.execution.Predicate;
  */
 public class IntHistogram {
 
+    private int buckets;
+    private int min;
+    private int max;
+    private int [] b;
+    private int width;
+    private int total;
+
     /**
      * Create a new IntHistogram.
      * 
@@ -24,6 +31,15 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
+        this.buckets = buckets;
+        this.min = min;
+        this.max = max;
+        b = new int[buckets];
+
+        width = (max - min) / buckets;
+        if (width == 0) {
+            width = 1;
+        }
     }
 
     /**
@@ -32,6 +48,8 @@ public class IntHistogram {
      */
     public void addValue(int v) {
     	// some code goes here
+        b[getBucketIndex(v)]++;
+        total++;
     }
 
     /**
@@ -47,6 +65,50 @@ public class IntHistogram {
     public double estimateSelectivity(Predicate.Op op, int v) {
 
     	// some code goes here
+        if (op == Predicate.Op.EQUALS) {
+            if (v < min || v > max) {
+                return 0.0;
+            }
+            return b[getBucketIndex(v)] * 1.0 / width / total;
+        } else if (op == Predicate.Op.LESS_THAN) {
+            if (v < min) {
+                return 0.0;
+            } else if (v > max) {
+                return 1.0;
+            }
+
+            int index = getBucketIndex(v);
+
+            double r = 0.0;
+
+            for (int i=0; i<index; i++) {
+                r += b[i] * 1.0 / total;
+            }
+
+            return r;
+        } else if (op == Predicate.Op.GREATER_THAN) {
+            if (v < min) {
+                return 1.0;
+            } else if (v > max) {
+                return 0.0;
+            }
+
+            int index = getBucketIndex(v);
+
+            double r = 0.0;
+
+            for (int i=index+1; i<buckets; i++) {
+                r += b[i] * 1.0 / total;
+            }
+
+            return r;
+        } else if (op == Predicate.Op.NOT_EQUALS) {
+            return 1.0 - estimateSelectivity(Predicate.Op.EQUALS, v);
+        } else if (op == Predicate.Op.LESS_THAN_OR_EQ) {
+            return estimateSelectivity(Predicate.Op.LESS_THAN, v) + estimateSelectivity(Predicate.Op.EQUALS, v);
+        } else if (op == Predicate.Op.GREATER_THAN_OR_EQ) {
+            return estimateSelectivity(Predicate.Op.GREATER_THAN, v) + estimateSelectivity(Predicate.Op.EQUALS, v);
+        }
         return -1.0;
     }
     
@@ -70,5 +132,13 @@ public class IntHistogram {
     public String toString() {
         // some code goes here
         return null;
+    }
+
+    public int getBucketIndex(int v) {
+        int id = (v-min) / width;
+        if (id >= buckets) {
+            id = buckets - 1;
+        }
+        return id;
     }
 }
