@@ -1,7 +1,11 @@
 package simpledb.execution;
 
+import simpledb.common.DbException;
 import simpledb.common.Type;
-import simpledb.storage.Tuple;
+import simpledb.storage.*;
+import simpledb.transaction.TransactionAbortedException;
+
+import java.util.*;
 
 /**
  * Knows how to compute some aggregate over a set of StringFields.
@@ -9,6 +13,12 @@ import simpledb.storage.Tuple;
 public class StringAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
+    private int gbfield;
+    private Type gbfieldtype;
+    private int afield;
+    private Op op;
+
+    HashMap<Field, ArrayList<String>> group;
 
     /**
      * Aggregate constructor
@@ -21,6 +31,12 @@ public class StringAggregator implements Aggregator {
 
     public StringAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
         // some code goes here
+        this.gbfield = gbfield;
+        this.gbfieldtype = gbfieldtype;
+        this.afield = afield;
+        this.op = what;
+
+        group = new HashMap<>();
     }
 
     /**
@@ -29,6 +45,14 @@ public class StringAggregator implements Aggregator {
      */
     public void mergeTupleIntoGroup(Tuple tup) {
         // some code goes here
+        Field k = tup.getField(gbfield);
+        String v = ((StringField) tup.getField(afield)).getValue();
+
+        if (!group.containsKey(k)) {
+            group.put(k, new ArrayList<>());
+        }
+
+        group.get(k).add(v);
     }
 
     /**
@@ -41,7 +65,72 @@ public class StringAggregator implements Aggregator {
      */
     public OpIterator iterator() {
         // some code goes here
-        throw new UnsupportedOperationException("please implement me for lab2");
+        return new StringAggIterator(group, gbfieldtype, op);
     }
 
+    private class StringAggIterator implements OpIterator {
+        private HashMap<Field, ArrayList<String>> group;
+        private Type gbtype;
+        private Op op;
+        private Iterator iter;
+
+        public StringAggIterator(HashMap<Field, ArrayList<String>> group, Type gbtype, Op op) {
+            this.group = group;
+            this.gbtype = gbtype;
+            this.op = op;
+        }
+
+        @Override
+        public void open() throws DbException, TransactionAbortedException {
+            iter = group.entrySet().iterator();
+        }
+
+        @Override
+        public boolean hasNext() throws DbException, TransactionAbortedException {
+            return iter.hasNext();
+        }
+
+        @Override
+        public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException {
+            TupleDesc td = getTupleDesc();
+            Tuple t = new Tuple(td);
+
+            Map.Entry<Field, ArrayList<String>> e = (Map.Entry<Field, ArrayList<String>>) iter.next();
+
+            t.setField(0, e.getKey());
+
+            if (op == Op.COUNT) {
+                t.setField(1, new IntField(e.getValue().size()));
+            }
+
+            return t;
+        }
+
+        @Override
+        public void rewind() throws DbException, TransactionAbortedException {
+            close();
+            open();
+        }
+
+        @Override
+        public TupleDesc getTupleDesc() {
+            Type typeAr[] = null;
+
+            if (gbfield != NO_GROUPING) {
+                typeAr = new Type[2];
+                typeAr[0] = gbtype;
+                typeAr[1] = Type.INT_TYPE;
+            } else {
+                typeAr = new Type[1];
+                typeAr[0] = Type.INT_TYPE;
+            }
+
+            return new TupleDesc(typeAr);
+        }
+
+        @Override
+        public void close() {
+            iter = null;
+        }
+    }
 }

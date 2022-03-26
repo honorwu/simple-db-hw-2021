@@ -27,6 +27,7 @@ public class HeapPage implements Page {
 
     byte[] oldData;
     private final Byte oldDataLock= (byte) 0;
+    TransactionId dirtyTid;
 
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
@@ -249,6 +250,18 @@ public class HeapPage implements Page {
     public void deleteTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+        int tupleNumber = t.getRecordId().getTupleNumber();
+
+        if (isSlotUsed(tupleNumber) == false) {
+            throw new DbException("slot is empty");
+        }
+
+        if (!tuples[tupleNumber].toString().equals(t.toString())) {
+            throw new DbException("tuple not on this page");
+        }
+
+        markSlotUsed(tupleNumber, false);
+        tuples[tupleNumber] = null;
     }
 
     /**
@@ -261,6 +274,16 @@ public class HeapPage implements Page {
     public void insertTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+        for (int i=0; i<numSlots; i++) {
+            if (isSlotUsed(i) == false) {
+                tuples[i] = t;
+                tuples[i].setRecordId(new RecordId(pid, i));
+                markSlotUsed(i, true);
+                return;
+            }
+        }
+
+        throw new DbException("no empty slots");
     }
 
     /**
@@ -270,6 +293,11 @@ public class HeapPage implements Page {
     public void markDirty(boolean dirty, TransactionId tid) {
         // some code goes here
 	// not necessary for lab1
+        if (dirty) {
+            dirtyTid = tid;
+        } else {
+            dirtyTid = null;
+        }
     }
 
     /**
@@ -278,7 +306,7 @@ public class HeapPage implements Page {
     public TransactionId isDirty() {
         // some code goes here
 	// Not necessary for lab1
-        return null;      
+        return dirtyTid;
     }
 
     /**
@@ -315,6 +343,16 @@ public class HeapPage implements Page {
     private void markSlotUsed(int i, boolean value) {
         // some code goes here
         // not necessary for lab1
+        byte n = -1;
+        byte x = 0x01;
+
+        x = (byte) (x << (i%8));
+
+        if (value) {
+            header[i/8] += x;
+        } else {
+            header[i/8] -= x;
+        }
     }
 
     /**
