@@ -96,9 +96,13 @@ public class BufferPool {
         }
 
         public synchronized void releaseLock(TransactionId tid) {
-            for (ConcurrentHashMap<TransactionId, Permissions> m : lock.values()) {
-                if (m.containsKey(tid)) {
-                    m.remove(tid);
+            for (PageId pid : lock.keySet()) {
+                if (lock.get(pid).containsKey(tid)) {
+                    lock.get(pid).remove(tid);
+
+                    if (lock.get(pid).size() == 0) {
+                        lock.remove(pid);
+                    }
                 }
             }
         }
@@ -181,8 +185,7 @@ public class BufferPool {
             }
 
             try {
-                Random r = new Random();
-                int time = 500 + r.nextInt(50);
+                int time = 500;
                 Thread.sleep(time);
                 wait += time;
 
