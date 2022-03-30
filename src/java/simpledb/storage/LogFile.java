@@ -460,6 +460,50 @@ public class LogFile {
             synchronized(this) {
                 preAppend();
                 // some code goes here
+                Long transactionId = tid.getId();
+                if (!tidToFirstLogRecord.containsKey(transactionId)) {
+                    return;
+                }
+
+                Long line = tidToFirstLogRecord.get(transactionId);
+                raf.seek(line);
+
+                Set<PageId> s = new HashSet<>();
+
+                while (true) {
+                    try {
+                        int cpType = raf.readInt();
+                        long cpTid = raf.readLong();
+
+                        switch (cpType) {
+                            case CHECKPOINT_RECORD:
+                                int num = raf.readInt();
+
+                                while (num-- > 0) {
+                                    raf.readLong();
+                                    raf.readLong();
+                                }
+                                break;
+
+                            case UPDATE_RECORD:
+                                Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+
+                                if (cpTid == transactionId && !s.contains(before.getId())) {
+                                    Database.getBufferPool().discardPage(before.getId());
+                                    Database.getCatalog().getDatabaseFile(before.getId().getTableId()).writePage(before);
+                                    s.add(before.getId());
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -487,6 +531,74 @@ public class LogFile {
             synchronized (this) {
                 recoveryUndecided = false;
                 // some code goes here
+                long lastCheckpoint = raf.readLong();
+
+                if (lastCheckpoint > 0) {
+                    raf.seek(lastCheckpoint);
+                }
+
+                Set<Long> commited = new HashSet<>();
+                Map<Long, ArrayList<Page>> beforePages = new HashMap<>();
+                Map<Long, ArrayList<Page>> afterPages = new HashMap<>();
+
+                while (true) {
+                    try {
+                        int cpType = raf.readInt();
+                        long cpTid = raf.readLong();
+
+                        switch (cpType) {
+                            case BEGIN_RECORD:
+                                break;
+                            case ABORT_RECORD:
+                                break;
+                            case COMMIT_RECORD:
+                                commited.add(cpTid);
+                                break;
+                            case CHECKPOINT_RECORD:
+                                int num = raf.readInt();
+
+                                while (num-- > 0) {
+                                    raf.readLong();
+                                    raf.readLong();
+                                }
+                                break;
+                            case UPDATE_RECORD:
+                                Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+
+                                if (!beforePages.containsKey(cpTid)) {
+                                    beforePages.put(cpTid, new ArrayList<>());
+                                }
+                                beforePages.get(cpTid).add(before);
+
+                                if (!afterPages.containsKey(cpTid)) {
+                                    afterPages.put(cpTid, new ArrayList<>());
+                                }
+                                afterPages.get(cpTid).add(after);
+
+                                break;
+                        }
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
+
+                for (Long id : beforePages.keySet()) {
+                    if (!commited.contains(id)) {
+                        for (Page p : beforePages.get(id)) {
+                            Database.getCatalog().getDatabaseFile(p.getId().getTableId()).writePage(p);
+                        }
+                    }
+                }
+
+                for (Long id : afterPages.keySet()) {
+                    if (commited.contains(id)) {
+                        for (Page p : afterPages.get(id)) {
+                            Database.getCatalog().getDatabaseFile(p.getId().getTableId()).writePage(p);
+                        }
+                    }
+                }
             }
          }
     }

@@ -363,6 +363,12 @@ public class BufferPool {
         Page p = pageCache.get(pid);
 
         if (p != null) {
+            TransactionId dirtier = p.isDirty();
+            if (dirtier != null){
+                Database.getLogFile().logWrite(dirtier, p.getBeforeImage(), p);
+                Database.getLogFile().force();
+            }
+
             DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
             file.writePage(p);
         }
@@ -378,6 +384,10 @@ public class BufferPool {
         for (PageId pid : associatedPages) {
             try {
                 flushPage(pid);
+                Page p = pageCache.get(pid);
+                if (p != null) {
+                    p.setBeforeImage();
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             }
