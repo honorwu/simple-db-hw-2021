@@ -538,8 +538,8 @@ public class LogFile {
                 }
 
                 Set<Long> commited = new HashSet<>();
-                Map<Long, ArrayList<Page>> beforePages = new HashMap<>();
-                Map<Long, ArrayList<Page>> afterPages = new HashMap<>();
+                Map<Long, ArrayList<Page>> beforePages = new TreeMap<>();
+                Map<Long, ArrayList<Page>> afterPages = new TreeMap<>();
 
                 while (true) {
                     try {
